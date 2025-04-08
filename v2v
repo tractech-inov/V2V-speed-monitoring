@@ -1,0 +1,172 @@
+import React, { useState, useEffect } from "react";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ReferenceLine,
+  AreaChart,
+  Area
+} from "recharts";
+import { Button } from "@/components/ui/button";
+import { DownloadIcon } from "lucide-react";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
+
+const speedLimit = 60;
+
+const generateData = () => {
+  const now = new Date();
+  return Array.from({ length: 30 }, (_, i) => {
+    const time = new Date(now.getTime() - (29 - i) * 1000).toLocaleTimeString();
+    const speed = 40 + Math.round(Math.random() * 30);
+    return {
+      time,
+      speed,
+      distance: 100 + Math.round(Math.random() * 100),
+      fault: speed > speedLimit ? `Overspeed at ${speed} km/h` : null,
+    };
+  });
+};
+
+export default function V2VDashboard() {
+  const [data, setData] = useState(generateData());
+  const [faults, setFaults] = useState([]);
+  const [currentReport, setCurrentReport] = useState({ moduleId: "A1234", vehicleType: "Sedan", speed: 60, distance: 160 });
+  const [previousReport] = useState({ moduleId: "A1234", vehicleType: "Sedan", speed: 50, distance: 120 });
+  const [showAllTime, setShowAllTime] = useState(false);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const newSpeed = 40 + Math.round(Math.random() * 30);
+      const newData = {
+        time: new Date().toLocaleTimeString(),
+        speed: newSpeed,
+        distance: 100 + Math.round(Math.random() * 100),
+        fault: newSpeed > speedLimit ? `Overspeed at ${newSpeed} km/h` : null,
+      };
+      setData((prevData) => [...prevData.slice(1), newData]);
+      setCurrentReport((prev) => ({ ...prev, speed: newData.speed, distance: newData.distance }));
+      if (newData.fault) {
+        setFaults((prevFaults) => [...prevFaults, newData]);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleDownload = (id) => {
+    const input = document.getElementById(id);
+    if (!input) return;
+    html2canvas(input).then((canvas) => {
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      pdf.text("Current Faults:", 10, pdfHeight + 10);
+      faults.forEach((f, i) => {
+        pdf.text(`${i + 1}. ${f.time} - ${f.fault}`, 10, pdfHeight + 20 + i * 10);
+      });
+      pdf.save(`${id}-report.pdf`);
+    });
+  };
+
+  const speedFeedback = currentReport.speed > speedLimit
+    ? { message: "Over Speed Limit! Slow Down!", color: "text-red-600" }
+    : currentReport.speed === speedLimit
+    ? { message: "At Speed Limit", color: "text-yellow-600" }
+    : { message: "Within Safe Speed Range", color: "text-green-600" };
+
+  const staticData = data.slice(0, 15);
+  const liveData = data.slice(15);
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-sky-100 via-purple-100 to-pink-100 p-8 font-sans">
+      <div className="text-center mb-10">
+        <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-700 via-purple-700 to-pink-600 animate-fade-in">V2V Module Data Dashboard</h1>
+        <p className="text-lg text-gray-600 mt-2 italic">Real-time insights from your intelligent vehicle systems</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* Current and Previous Reports */}
+        <Card id="current-report">
+          <CardContent>
+            <h2 className="text-2xl font-bold text-blue-700">Current Data Report</h2>
+            <p><strong>Module ID:</strong> {currentReport.moduleId}</p>
+            <p><strong>Vehicle Type:</strong> {currentReport.vehicleType}</p>
+            <p><strong>Speed:</strong> {currentReport.speed} km/h</p>
+            <p><strong>Distance:</strong> {currentReport.distance} m</p>
+            <p className={`font-semibold ${speedFeedback.color}`}>{speedFeedback.message}</p>
+          </CardContent>
+        </Card>
+
+        <Card id="previous-report">
+          <CardContent>
+            <h2 className="text-2xl font-bold text-purple-700">Previous Data Report</h2>
+            <p><strong>Module ID:</strong> {previousReport.moduleId}</p>
+            <p><strong>Vehicle Type:</strong> {previousReport.vehicleType}</p>
+            <p><strong>Speed:</strong> {previousReport.speed} km/h</p>
+            <p><strong>Distance:</strong> {previousReport.distance} m</p>
+          </CardContent>
+        </Card>
+
+        {/* Static and Live Graphs */}
+        <Card className="md:col-span-2">
+          <CardContent>
+            <h2 className="text-2xl font-bold text-indigo-700 mb-4">Speed and Distance Graphs</h2>
+            <LineChart width={900} height={300} data={[...staticData, ...liveData]}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="time" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <ReferenceLine y={speedLimit} stroke="red" label="Speed Limit" strokeDasharray="3 3" />
+              <Line dataKey="speed" stroke="#6366F1" strokeWidth={2} />
+              <Line dataKey="distance" stroke="#22C55E" strokeWidth={2} />
+            </LineChart>
+          </CardContent>
+        </Card>
+
+        {/* Traffic Monitoring (Non-continuous) */}
+        <Card className="md:col-span-2">
+          <CardContent>
+            <h2 className="text-2xl font-bold text-cyan-700 mb-4">Traffic Monitoring Graph</h2>
+            <AreaChart width={900} height={300} data={staticData}>
+              <defs>
+                <linearGradient id="trafficSpeed" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8} />
+                  <stop offset="95%" stopColor="#8884d8" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="time" />
+              <YAxis />
+              <CartesianGrid strokeDasharray="3 3" />
+              <Tooltip />
+              <Area type="monotone" dataKey="speed" stroke="#8884d8" fillOpacity={1} fill="url(#trafficSpeed)" />
+            </AreaChart>
+          </CardContent>
+        </Card>
+
+        {/* Fault Monitoring */}
+        <Card className="md:col-span-2">
+          <CardContent>
+            <h2 className="text-2xl font-bold text-red-600">Fault Monitoring</h2>
+            <div className="max-h-60 overflow-y-auto">
+              {faults.length === 0 ? <p>No faults detected.</p> : faults.map((f, i) => (
+                <p key={i} className="text-sm">{f.time} - {f.fault}</p>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="text-center mt-8">
+        <Button onClick={() => handleDownload("current-report")} className="bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:opacity-90">Download Report with Faults</Button>
+      </div>
+    </div>
+  );
+}
